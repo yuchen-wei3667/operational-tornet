@@ -70,6 +70,44 @@ Start with `notebooks/DataLoaders.ipynb` to get an overview on loading and visua
 
 To run inference on TorNet samples using a pretrained model,  look at `notebooks/VisualizeSamples.ipynb`.
 
+## Canonical KDP processing for raw-vs-chip comparison
+
+The repository now uses one shared KDP builder (`tornet.data.kdp`) for both:
+
+1. full-scan inference preprocessing (`read_nexrad_v06_to_tornet`)
+2. chip-vs-raw debugging plots (`plot_kdp_only.py`, `plot_chip_vs_raw_clipped.py`)
+
+The canonical path is:
+
+1. map TorNet tilt channels explicitly to reflectivity sweeps `(0, 2, ...)`
+2. build KDP from Py-ART Vulpiani retrieval (`pyart_vulpiani`) on those reflectivity sweeps
+3. resample to chip geometry using azimuth-wrap interpolation (default nearest-neighbor for KDP)
+4. apply one shared finite/QC comparison mask (`|KDP|`, DBZ, and RHOHV thresholds) to both chip and raw KDP before metrics/plots
+
+`phidp_gradient` is available as an explicit fallback source for debugging and will not match TorNet chips exactly in many cases.
+
+Example: per-case KDP-only comparison with metrics and threshold enforcement:
+
+```bash
+python scripts/tornado_detection/plot_kdp_only.py \
+  --chip-root /path/to/chips \
+  --chip-file SOME_CHIP.nc \
+  --manifest download_manifest.json \
+  --output kdp_compare.png \
+  --kdp-source pyart_vulpiani \
+  --enforce-thresholds
+```
+
+Example: all-variable chip-vs-raw panel with KDP metrics logged per case:
+
+```bash
+python scripts/tornado_detection/plot_chip_vs_raw_clipped.py \
+  --manifest download_manifest.json \
+  --chip-root /path/to/chips \
+  --out-dir ./plots \
+  --kdp-source pyart_vulpiani
+```
+
 ## Train CNN baseline model
 
 ### Multiple backend support with Keras 3
