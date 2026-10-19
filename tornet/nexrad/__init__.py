@@ -11,3 +11,9 @@ from tornet.nexrad.pipeline import (  # noqa: F401
     stack_frames,
     tile_centers,
 )
+from tornet.nexrad.model_inputs import (  # noqa: F401
+    MODEL_INPUT_KEYS,
+    ModelInputs,
+    level2_to_model_inputs,
+    volume_to_model_inputs,
+)

@@ -256,3 +256,36 @@ def test_dealias_split_merge_and_float16_correction():
     assert out[0, 0] == pytest.approx(52.03125)
     assert netcdf_quantize(out, 1)[0, 0] == 52.0
     assert np.isnan(out[3, 3])
+
+
+# --------------------------------------------------------------------- model-ready inputs
+def test_volume_to_model_inputs_matches_training_preprocessing():
+    from tornet.data import preprocess as pp
+    from tornet.nexrad.model_inputs import MODEL_INPUT_KEYS, ModelInputs, volume_to_model_inputs
+
+    vol = _fake_tornet_volume()
+    centers = [(5.0, 40000.0), (200.0, 90000.0), (300.0, 140000.0)]
+    mi = volume_to_model_inputs(vol, centers=centers)
+    assert len(mi) == 3 and set(mi.inputs) == set(MODEL_INPUT_KEYS)
+    for k in MODEL_INPUT_KEYS:
+        assert mi.inputs[k].shape == (3, CHIP_N_AZ, CHIP_N_RNG, 2) and mi.inputs[k].dtype == np.float32
+    # identical to the training pipeline: read_file sample -> remove_time_dim -> add_coordinates
+    ref = extract_chip(vol, *centers[1])
+    pp.remove_time_dim(ref)
+    pp.add_coordinates(ref, include_az=False, tilt_last=True, backend=np)
+    for k in MODEL_INPUT_KEYS:
+        np.testing.assert_array_equal(mi.inputs[k][1], ref[k])
+    assert mi.chips["az_lower"][0] == -25.0 and mi.chips["rng_center"][2] == 140000.0
+    assert len(list(mi.batches(2))) == 2
+
+    import os, tempfile
+    with tempfile.TemporaryDirectory() as d:
+        fn = os.path.join(d, "mi.npz")
+        mi.save(fn)
+        m2 = ModelInputs.load(fn)
+    assert m2.site == "KXXX" and m2.time == vol.time and m2.kdp_source == "level3"
+    for k in MODEL_INPUT_KEYS:
+        np.testing.assert_array_equal(m2.inputs[k], mi.inputs[k])
+    # full-sweep tiling by default; include_az adds a third coordinate channel
+    assert len(volume_to_model_inputs(vol, az_step=30, rng_step=30000)) == 72
+    assert volume_to_model_inputs(vol, centers=centers[:1], include_az=True).inputs["coordinates"].shape[-1] == 3

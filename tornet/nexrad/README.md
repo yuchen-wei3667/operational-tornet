@@ -54,6 +54,37 @@ is published in real time on AWS, typically within a minute or two.
 
 ## Usage
 
+### Level-II → model-ready inputs in one call
+
+```python
+from tornet.nexrad import ModelInputs, fetch, level2_to_model_inputs
+
+mi = level2_to_model_inputs("KTLX20240507_000047_V06",          # path, bytes, .gz, or live chunks
+                            level3_kdp=fetch.level3_kdp_fetcher)  # omit for Level-II-only KDP
+mi.inputs        # {DBZ, VEL, KDP, RHOHV, ZDR, WIDTH, range_folded_mask, coordinates}: float32 [N,120,240,2]
+mi.chips         # az_center, rng_center, az/rng_lower/upper per chip: [N]
+logits = model.predict(mi.inputs)                              # nothing else to do
+mi.save("KTLX_inputs.npz"); ModelInputs.load("KTLX_inputs.npz")
+```
+
+By default the whole sweep is tiled with overlapping chips (`az_step`, `rng_step`,
+`rng_max`). Pass `centers=[(az_deg, range_m), ...]` for specific chips. The tensors are
+exactly what the TorNet training pipeline feeds the model (`read_file` →
+`remove_time_dim` → `add_coordinates(include_az=False)`): physical units with NaNs,
+because normalization and NaN filling happen inside the model. Use `include_az=True`
+for models trained with azimuth coordinates. Dealiasing uses U-Net VDA by default
+(`dealiaser=None` to skip).
+
+The same thing from the command line, writing one `.npz` per scan:
+
+```bash
+python scripts/nexrad/level2_to_model_inputs.py KTLX20240507_000047_V06 --out-dir inputs/
+python scripts/nexrad/level2_to_model_inputs.py KTLX20240507_000047_V06 --no-level3 --center 215 74
+python scripts/nexrad/level2_to_model_inputs.py --site KTLX --out-dir inputs/   # newest live scan
+```
+
+### Lower-level API
+
 ```python
 from tornet.nexrad import level2_to_tornet_volume, extract_chip, iter_chips
 from tornet.nexrad.dealias import UNetVDA

@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from tornet.data import preprocess as pp
+from tornet.nexrad.model_inputs import chips_to_model_inputs
 from tornet.nexrad.pipeline import (CHIP_N_AZ, CHIP_N_RNG, TorNetVolume, chip_indices,
                                     extract_chip, tile_centers)
 
@@ -28,17 +28,6 @@ def load_tornet_model(model_path: Optional[str] = None):
         model_path = hf_hub_download(repo_id=DEFAULT_MODEL_REPO, filename=DEFAULT_MODEL_FILE)
     return keras.saving.load_model(model_path, compile=False,
                                    custom_objects={"CoordConv2D": CoordConv2D, "FillNaNs": FillNaNs})
-
-
-def chips_to_model_inputs(chips: Sequence[Dict[str, np.ndarray]], input_keys) -> Dict[str, np.ndarray]:
-    """Single-frame chip dicts -> batched model inputs (same preprocessing as training)."""
-    batch = []
-    for c in chips:
-        s = {k: v.copy() for k, v in c.items()}
-        pp.remove_time_dim(s)
-        pp.add_coordinates(s, include_az=False, tilt_last=True, backend=np)
-        batch.append(s)
-    return {k: np.stack([s[k] for s in batch]).astype(np.float32) for k in input_keys}
 
 
 def _sigmoid(x):
@@ -69,7 +58,7 @@ class SweepPredictor:
         for i in range(0, len(centers), self.batch_size):
             cs = centers[i:i + self.batch_size]
             chips = [extract_chip(volume, a, r) for a, r in cs]
-            x = chips_to_model_inputs(chips, self.input_keys)
+            x = chips_to_model_inputs(chips, keys=self.input_keys)
             heat = np.asarray(self.heatmap_model.predict(x, verbose=0))
             if heat.ndim == 3:
                 heat = heat[..., None]
