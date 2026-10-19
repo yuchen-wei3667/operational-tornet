@@ -1,0 +1,8 @@
+# NEXRAD Level-II/III -> TorNet inputs (tornet.nexrad)
+arm_pyart
+scipy
+keras>=3.0
+huggingface_hub
+# needed once to convert the unet-vda dealiasing checkpoint to .npz
+# (tornet.nexrad.dealias.download_unet_vda_weights)
+tensorflow-cpu

@@ -70,6 +70,26 @@ Start with `notebooks/DataLoaders.ipynb` to get an overview on loading and visua
 
 To run inference on TorNet samples using a pretrained model,  look at `notebooks/VisualizeSamples.ipynb`.
 
+## Converting NEXRAD Level-II data (archived or live) into TorNet inputs
+
+`tornet.nexrad` reproduces TorNet's preprocessing from raw NEXRAD data and is meant for
+operational use. It covers native polar gates, split-cut handling, the U-Net VDA velocity
+dealiaser, Level-III KDP alignment, range-folded masks and netCDF quantization. Verified
+against released TorNet samples, the last frame is bit-exact for DBZ, RHOHV, ZDR, WIDTH,
+KDP and the range-folded mask, and ≈99.9% identical for dealiased VEL. See
+[`tornet/nexrad/README.md`](tornet/nexrad/README.md) for the conventions and fidelity
+numbers.
+
+```
+pip install -r requirements/nexrad.txt
+python scripts/nexrad/run_realtime_tornet.py --sites KTLX --out-dir ./tornet_rt      # live
+python scripts/nexrad/validate_against_tornet.py $TORNET_ROOT/train/2022/*.nc --max-files 20
+```
+
+`tornet/data/xradar_loader.py` interpolates onto a fixed grid and computes KDP and
+dealiasing differently, so its output does not match the training data. Use
+`tornet.nexrad` when model inputs must match TorNet.
+
 ## Canonical KDP processing for raw-vs-chip comparison
 
 The repository now uses one shared KDP builder (`tornet.data.kdp`) for both:
