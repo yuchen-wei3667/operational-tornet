@@ -26,20 +26,31 @@ text and the released data disagree, the data wins. Those cases are marked **(da
 
 ## Measured fidelity
 
-Last frame of each sample (what the baseline CNN uses). Score = fraction of all
-2×120×240 gates identical to the TorNet file (NaN == NaN), with Level-III KDP:
+Held-out check: 27 TorNet samples (21 from 2022, 6 from 2013; 27 radars; TOR/WRN/NUL
+categories), last frame, Level-III KDP. Score = fraction of all 2×120×240 gates that
+are identical to the TorNet file (NaN == NaN):
 
-| Variable | Exact match |
-|---|---|
-| DBZ, RHOHV, ZDR, WIDTH, KDP, range_folded_mask | 100% (bit-exact) |
-| VEL (dealiased) | ≈99.9% (remaining gates: U-Net fold decisions at class boundaries; different TF build/hardware) |
+| Variable | Mean exact | Samples 100% exact |
+|---|---|---|
+| DBZ, RHOHV, ZDR | 98.0–98.2% | 25 / 27 |
+| WIDTH, range_folded_mask | 98.7% / 99.85% | 22 / 27, 24 / 27 |
+| KDP (Level-III) | 97.4% | 22 / 25 |
+| VEL (dealiased) | 98.3% (99.9% on the 25) | n/a (U-Net decisions at class boundaries) |
 
-See the validation summary in the commit / PR for the exact sample set.
+All shortfalls come from **which cut** TorNet assigned to a frame, not from gate
+processing. For every outlier, `frame_diag`-style search over neighbouring cuts finds
+a cut that reproduces the TorNet chip at **100%**. TorNet sometimes took a cut 1–6
+minutes after the frame time (e.g. NAK from the next volume). This jitter does not
+follow a reproducible rule. In real time the inputs are the latest cuts, so it does
+not apply.
 
 **Level-II-only KDP fallback** (`kdp_source="level2"`, used when Level-III is not
-available): an ORPG-like estimate tuned against Level-III products. Against Level-III
-it gives MAE ≈ 0.08 °/km, correlation ≈ 0.8, valid-mask IoU ≈ 0.85. It is an
-approximation, not the training distribution, so prefer Level-III.
+available): an ORPG-like estimate tuned against Level-III products.
+* Full sweeps, vs. Level-III: MAE ≈ 0.08 °/km, correlation ≈ 0.8, valid-mask IoU ≈ 0.85.
+* The 27 held-out TorNet chips: MAE 0.13 °/km, correlation 0.64, valid-mask IoU 0.89.
+
+It is an approximation of the training distribution, so prefer Level-III. Level-III
+is published in real time on AWS, typically within a minute or two.
 
 ## Usage
 

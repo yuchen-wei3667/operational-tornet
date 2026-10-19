@@ -76,7 +76,7 @@ To run inference on TorNet samples using a pretrained model,  look at `notebooks
 operational use. It covers native polar gates, split-cut handling, the U-Net VDA velocity
 dealiaser, Level-III KDP alignment, range-folded masks and netCDF quantization. Verified
 against released TorNet samples, the last frame is bit-exact for DBZ, RHOHV, ZDR, WIDTH,
-KDP and the range-folded mask, and ≈99.9% identical for dealiased VEL. See
+KDP and the range-folded mask on 25 of 27 held-out samples, and ≈99.9% identical for dealiased VEL. The rest differ only in which radar cut TorNet assigned to the frame. See
 [`tornet/nexrad/README.md`](tornet/nexrad/README.md) for the conventions and fidelity
 numbers.
 
