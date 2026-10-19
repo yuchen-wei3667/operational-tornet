@@ -5,10 +5,14 @@ Times each stage of ``level2_to_model_inputs`` per volume: Level-II decode, cut
 selection + moment decoding, U-Net VDA dealiasing, KDP (Level-II estimate or
 Level-III decode), netCDF quantization, chip tiling + coordinates, and model inference.
 Files are read into memory first so disk I/O is excluded; Level-III products are
-fetched once before timing (fetch latency is reported separately).
+fetched once before timing (fetch latency is reported separately).  With
+``--download``, each Level-II volume is also re-downloaded from the AWS archive
+(key derived from its file name) and ``full_scan_s`` = download + Level-III fetch +
+conversion + inference, i.e. the wall-clock time from a scan on AWS to probabilities.
 
 Example:
   python scripts/nexrad/benchmark_level2.py data/*V06 --repeat 3 --kdp-source both --infer
+  python scripts/nexrad/benchmark_level2.py data/*V06 --kdp-source level3 --infer --download
 """
 import argparse
 import collections
@@ -55,6 +59,12 @@ def instrument():
             setattr(m, a, fn)
 
 
+def level2_archive_key(path):
+    """SITEYYYYMMDD_HHMMSS_V06[.gz] -> YYYY/MM/DD/SITE/<name> in the Level-II archive."""
+    name = os.path.basename(path)
+    return f"{name[4:8]}/{name[8:10]}/{name[10:12]}/{name[:4]}/{name}"
+
+
 def peak_rss_mb():
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
 
@@ -67,6 +77,8 @@ def main():
     ap.add_argument("--max-range", type=float, default=230.0, help="km")
     ap.add_argument("--infer", action="store_true", help="also time the TorNet model on all chips")
     ap.add_argument("--batch-size", type=int, default=64)
+    ap.add_argument("--download", action="store_true",
+                    help="also time downloading each volume from the AWS Level-II archive")
     ap.add_argument("--json-out", default=None)
     args = ap.parse_args()
 
@@ -87,6 +99,11 @@ def main():
         with open(path, "rb") as f:
             raw = f.read()
         head = l2.open_level2(raw)
+        download_s = None
+        if args.download:
+            t = time.perf_counter()
+            fetch.download(fetch.LEVEL2_BUCKET, level2_archive_key(path))
+            download_s = time.perf_counter() - t
         l3 = None
         fetch_s = None
         if "level3" in sources:
@@ -136,7 +153,10 @@ def main():
                        "end_to_end_s": (total - st["model_inputs"] + st["streamed_model_inputs"] + st["inference"]
                                         if model is not None else total),
                        "level3_fetch_s": fetch_s if src == "level3" else None,
+                       "download_s": download_s,
                        "stages": st, "peak_rss_mb": peak_rss_mb()}
+                if download_s is not None and model is not None:
+                    row["full_scan_s"] = row["end_to_end_s"] + download_s + (row["level3_fetch_s"] or 0.0)
                 rows.append(row)
                 print(f"{row['file']:28s} vcp={vol.vcp:<3d} kdp={src:6s} rep={rep} "
                       f"convert={total:6.2f}s" + (f" end_to_end={row['end_to_end_s']:6.2f}s" if model else "") +
@@ -164,6 +184,11 @@ def main():
         if streamed:
             s["convert_streamed_s_median"] = statistics.median(streamed)
             s["convert_streamed_s_p90"] = float(np.percentile(streamed, 90))
+        for k in ("download_s", "full_scan_s"):
+            vals = [r[k] for r in rs if r.get(k) is not None]
+            if vals:
+                s[f"{k}_median"] = statistics.median(vals)
+                s[f"{k}_p90"] = float(np.percentile(vals, 90))
         fetches = [r["level3_fetch_s"] for r in rs if r["level3_fetch_s"] is not None]
         if fetches:
             s["level3_fetch_s_median"] = statistics.median(fetches)
@@ -174,6 +199,10 @@ def main():
         if streamed:
             print(f"    streamed (production path, batches into the model): convert median "
                   f"{s['convert_streamed_s_median']:.2f}s (p90 {s['convert_streamed_s_p90']:.2f}s)")
+        if "full_scan_s_median" in s:
+            print(f"    full scan (download + Level-III fetch + convert + inference): median "
+                  f"{s['full_scan_s_median']:.2f}s (p90 {s['full_scan_s_p90']:.2f}s); "
+                  f"Level-II download median {s['download_s_median']:.2f}s")
         print("    stages: " + ", ".join(f"{k}={v:.2f}s" for k, v in sorted(med.items(), key=lambda kv: -kv[1])))
     summary["peak_rss_mb"] = peak_rss_mb()
     print(f"  peak RSS {summary['peak_rss_mb']:.0f} MB, {os.cpu_count()} CPUs")

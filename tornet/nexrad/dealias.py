@@ -192,7 +192,7 @@ class UNetVDA:
 
     def predict_folds(self, vel_norm_batch: np.ndarray) -> np.ndarray:
         """vel_norm_batch: [B, n_az, n_rng, 1] normalized.  Returns argmax category [B,n_az,n_rng]"""
-        logits = self.model.predict(vel_norm_batch.astype(np.float32), verbose=0)
+        logits = self.model.predict_on_batch(vel_norm_batch.astype(np.float32))
         logits = np.clip(np.asarray(logits), -50.0, 50.0)
         return np.argmax(logits, axis=-1)
 

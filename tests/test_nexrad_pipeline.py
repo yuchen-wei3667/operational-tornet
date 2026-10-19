@@ -244,7 +244,7 @@ def test_dealias_split_merge_and_float16_correction():
 
     class _Const:
         """Stand-in model: predicts +1 fold everywhere (category 4)."""
-        def predict(self, x, verbose=0):
+        def predict_on_batch(self, x):
             out = np.zeros(x.shape[:3] + (6,), np.float32)
             out[..., 4] = 1.0
             return out

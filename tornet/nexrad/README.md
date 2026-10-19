@@ -179,3 +179,62 @@ python scripts/nexrad/validate_against_tornet.py $TORNET_ROOT/train/2022/*.nc \
 python scripts/nexrad/benchmark_level2.py data/*_V06 --repeat 2 --kdp-source both --infer \
     --json-out bench.json
 ```
+
+### Full scan: AWS → probabilities
+
+Wall-clock time per volume from a scan sitting on AWS to tornado probabilities for
+every chip of the sweep. It adds the Level-II download (`--download`) and the
+Level-III KDP fetch to conversion and inference. Same machine; 13 volumes with
+Level-III KDP on AWS (12 from 2022, KTLX 2024). Median (p90) of warm runs, U-Net VDA
+called with `predict_on_batch`.
+
+| Stage | Time |
+|---|---|
+| Level-II download (AWS archive) | 0.84 s (1.09) |
+| Level-III KDP fetch, 2 products | 1.55 s |
+| Level-II decode | 2.16 s (3.93) |
+| Cut selection + moment decode | 0.16 s |
+| U-Net VDA dealiasing, 2 tilts | 1.41 s (1.62) |
+| KDP decode + quantization | 0.08 s |
+| Chips + coordinates, streamed | 0.40 s |
+| **Level-II → model-ready inputs** | **4.6 s (6.1)** |
+| TorNet inference, 384 chips | 9.3 s (9.8) |
+| **Full scan** | **16.5 s (18.2)** |
+
+Peak RSS 3.4 GB. The live runner decodes real-time chunks instead of a finished
+archive file, so the download is replaced by waiting for the 0.5°/0.9° cuts.
+
+```bash
+python scripts/nexrad/benchmark_level2.py data/*_V06 --kdp-source level3 --infer --download
+```
+
+## Dealiasing: is U-Net VDA required?
+
+TorNet's VEL is U-Net VDA output, so U-Net VDA is the only dealiaser that reproduces
+the training inputs. `scripts/nexrad/compare_dealiasers.py` swaps the dealiaser and
+keeps every other field as stored in the TorNet file, so any change in the model's
+probability comes from VEL alone. Results on 27 held-out TorNet files (2022, all
+frames): 78 frames reproduced, 33 of them with aliased velocity in the chip.
+
+| Dealiaser | VEL match with TorNet (aliased frames, worst) | Gates off by a fold | Mean / max change in probability | Frames changed > 0.05 | Time per sweep |
+|---|---|---|---|---|---|
+| U-Net VDA (TorNet's) | 99.98% (99.96%, 99.86%) | 0.02% | 0.0003 / 0.008 | 0 | 0.73 s |
+| Py-ART region-based | 99.33% (98.44%, 51.9%) | 0.67% | 0.011 / 0.83 | 1 | 0.99 s (p90 2.5 s) |
+| None | 99.64% (99.16%, 95.9%) | 0.36% | 0.016 / 0.58 | 4 | 0 |
+
+* **No dealiasing** changed the probability by more than 0.05 on 4 of 78 frames. On
+  two KGWX frames it went from 0.04 to 0.30 and from 0.11 to 0.69, because aliased
+  couplets look like strong shear to the model.
+* **Py-ART region-based** usually matches U-Net, but it failed on one KUDX frame.
+  It unfolded a whole region in the wrong direction, so only 52% of gates matched
+  and the probability went from 0.07 to 0.90.
+* **Py-ART 2-D phase unwrapping** did not finish one super-resolution sweep in
+  10 min, so it cannot run on live data.
+* **U-Net VDA** was also the fastest of the three. It runs in Keras 3 on any backend
+  from the `.npz` weights; TensorFlow is needed only for the one-time weight
+  conversion.
+
+Keep U-Net VDA. A classical dealiaser can be swapped in with
+`dealiaser=callable(vel, nyquist)`, but its errors land on aliased rotation, which is
+where the model looks.
+
