@@ -14,6 +14,7 @@ from tornet.nexrad.pipeline import (  # noqa: F401
 from tornet.nexrad.model_inputs import (  # noqa: F401
     MODEL_INPUT_KEYS,
     ModelInputs,
+    iter_model_input_batches,
     level2_to_model_inputs,
     volume_to_model_inputs,
 )

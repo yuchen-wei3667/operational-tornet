@@ -131,8 +131,10 @@ python scripts/nexrad/validate_against_tornet.py $TORNET_ROOT/train/2022/*.nc \
   backend. `tensorflow` is needed once, to convert the unet-vda checkpoint
   (`tornet.nexrad.dealias.download_unet_vda_weights`). Ship the resulting `.npz` and
   point `TORNET_UNET_VDA_WEIGHTS` at it.
-* **Latency (CPU):** decode + dealias both tilts ≈ 3–5 s. Tiling a 230 km sweep is
-  ~380 chips; on CPU, together with model load, this took ~30 s.
+* **Latency:** see *Benchmark* below. On 4 CPU cores a full 230 km sweep takes ~5 s to
+  convert and ~18 s end to end with inference. For full sweeps, stream chips with
+  `iter_model_input_batches` (or `SweepPredictor`). Building all ~384 chips as one array
+  is ~700 MB, and the first touch of that memory alone costs ~4.5 s.
 * **VCPs:** requires a 0.5° and 0.9° cut (VCP 12, 212, 215, 35). VCPs without a 0.9°
   cut (31, 32) raise `ValueError`. TorNet contains no such data.
 * **Range:** chips reaching beyond the data, or inside 2.125 km, are NaN-filled.
@@ -141,3 +143,39 @@ python scripts/nexrad/validate_against_tornet.py $TORNET_ROOT/train/2022/*.nc \
   `unidata-nexrad-level3` (AWS Open Data, anonymous HTTPS). Level-III on AWS covers
   2020 and later. Earlier Level-III comes from `gcp-public-data-nexrad-l3` daily tars;
   see the validation script.
+
+## Benchmark
+
+`scripts/nexrad/benchmark_level2.py` measures full-sweep runs (230 km, 384 chips,
+1832 gates). Setup: 4-core cloud VM, no GPU, TensorFlow 2.21 / Keras 3.15. Data:
+17 volumes from 17 radars (13 from 2022, 4 from 2013, KTLX 2024), 5–19 MB each, VCPs
+12/212/215. Figures are the median (p90) of warm runs; files are read from memory.
+
+| Stage | KDP from Level-II | KDP from Level-III |
+|---|---|---|
+| Level-II decode (Py-ART) | 1.97 s (3.75) | 2.47 s (3.51) |
+| Cut selection + moment decode | 0.19 s | 0.18 s |
+| U-Net VDA dealiasing, 2 tilts | 1.90 s (2.51) | 1.80 s (2.38) |
+| KDP | 0.42 s (estimate) | 0.02 s (decode) |
+| Quantization | 0.09 s | 0.09 s |
+| Chips + coordinates, streamed | 0.47 s | 0.44 s |
+| **Level-II → model-ready inputs** | **5.3 s (7.0)** | **4.9 s (6.3)** |
+| TorNet inference, 384 chips | 13.2 s (13.9) | 12.7 s (13.8) |
+| **End to end** | **18.6 s (20.2)** | **17.8 s (19.4)** |
+
+* **One-time startup:** loading U-Net VDA takes 3.8 s and the TorNet model 1.0 s.
+  Fetching Level-III from AWS adds 1.8 s (p90 2.1 s) per volume. Peak RSS is 2.9 GB.
+* **Decode time** grows with file size: 0.7 s for 2013 files, 2.1 s for 2022, 4.0 s
+  for the 2024 KTLX volume.
+* **Inference** dominates the total (~33 ms per chip on CPU). `predict_on_batch` is
+  used because it is ~10% faster than `predict`. To go faster, use a GPU or tile more
+  coarsely. For example, `az_step=30, rng_step=30_000` gives no overlap and about a
+  quarter of the chips.
+* **Volume cadence:** a full volume arrives every 4–6 min (VCP 212/215), and new
+  0.5° cuts come every 1–2 min with SAILS. So one CPU process keeps up with a few
+  radars; scale out by radar.
+
+```bash
+python scripts/nexrad/benchmark_level2.py data/*_V06 --repeat 2 --kdp-source both --infer \
+    --json-out bench.json
+```

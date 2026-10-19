@@ -42,17 +42,23 @@ def default_dealiaser():
 def chip_to_model_input(chip: Dict[str, np.ndarray], include_az: bool = False,
                         keys: Sequence[str] = MODEL_INPUT_KEYS) -> Dict[str, np.ndarray]:
     """One ``extract_chip``/``read_file`` sample -> unbatched model input [120, 240, C]."""
-    s = {k: v.copy() for k, v in chip.items()}
+    s = dict(chip)                      # shallow: the steps below only rebind keys
     pp.remove_time_dim(s)
     pp.add_coordinates(s, include_az=include_az, tilt_last=True, backend=np)
-    return {k: s[k].astype(np.float32) for k in keys}
+    return {k: s[k].astype(np.float32, copy=False) for k in keys}
 
 
 def chips_to_model_inputs(chips: Sequence[Dict[str, np.ndarray]], include_az: bool = False,
                           keys: Sequence[str] = MODEL_INPUT_KEYS) -> Dict[str, np.ndarray]:
     """Single-frame chips -> batched model inputs [N, 120, 240, C]."""
-    batch = [chip_to_model_input(c, include_az, keys) for c in chips]
-    return {k: np.stack([b[k] for b in batch]) for k in keys}
+    out: Dict[str, np.ndarray] = {}
+    for i, c in enumerate(chips):
+        x = chip_to_model_input(c, include_az, keys)
+        if not out:                     # preallocate once; avoids np.stack's extra copy
+            out = {k: np.empty((len(chips),) + x[k].shape, np.float32) for k in keys}
+        for k in keys:
+            out[k][i] = x[k]
+    return out
 
 
 @dataclass
@@ -117,13 +123,22 @@ def volume_to_model_inputs(volume: TorNetVolume,
     (``tile_centers`` kwargs: az_step, rng_step [m], rng_min, rng_max).
     """
     centers = list(centers) if centers is not None else tile_centers(volume, **tile_kwargs)
-    chips = [extract_chip(volume, a, r) for a, r in centers]
     meta = {"az_center": np.array([c[0] for c in centers], np.float32),
             "rng_center": np.array([c[1] for c in centers], np.float32)}
-    for k in CHIP_META_KEYS:
-        meta[k] = np.array([c[k][0] for c in chips], np.float32)
-    inputs = (chips_to_model_inputs(chips, include_az, keys) if chips
-              else {k: np.zeros((0, 120, 240, 2), np.float32) for k in keys})
+    meta.update({k: np.empty(len(centers), np.float32) for k in CHIP_META_KEYS})
+    variables = [k for k in keys if k in ALL_VARIABLES]
+    inputs: Dict[str, np.ndarray] = {}
+    for i, (a, r) in enumerate(centers):
+        chip = extract_chip(volume, a, r, variables=variables)
+        x = chip_to_model_input(chip, include_az, keys)
+        if not inputs:
+            inputs = {k: np.empty((len(centers),) + x[k].shape, np.float32) for k in keys}
+        for k in keys:
+            inputs[k][i] = x[k]
+        for k in CHIP_META_KEYS:
+            meta[k][i] = chip[k][0]
+    if not inputs:
+        inputs = {k: np.zeros((0, 120, 240, 2), np.float32) for k in keys}
     return ModelInputs(inputs=inputs, chips=meta, site=volume.site, time=volume.time,
                        vcp=volume.vcp, latitude=volume.latitude, longitude=volume.longitude,
                        elevations=volume.elevations, sweep_times=list(volume.sweep_times),
@@ -159,3 +174,19 @@ def level2_to_model_inputs(level2_source,
                                      dealiaser=dealiaser, selection=selection, target_time=target_time)
     return volume_to_model_inputs(volume, centers=centers, include_az=include_az, keys=keys,
                                   **tile_kwargs)
+
+
+def iter_model_input_batches(volume: TorNetVolume,
+                             batch_size: int = 64,
+                             centers: Optional[Sequence[Tuple[float, float]]] = None,
+                             include_az: bool = False,
+                             keys: Sequence[str] = MODEL_INPUT_KEYS,
+                             **tile_kwargs) -> Iterator[ModelInputs]:
+    """
+    Like ``volume_to_model_inputs`` but yields batches of at most ``batch_size`` chips,
+    so a full sweep (~400 chips, ~700 MB as one array) never has to be held at once.
+    """
+    centers = list(centers) if centers is not None else tile_centers(volume, **tile_kwargs)
+    for i in range(0, len(centers), batch_size):
+        yield volume_to_model_inputs(volume, centers=centers[i:i + batch_size],
+                                     include_az=include_az, keys=keys)

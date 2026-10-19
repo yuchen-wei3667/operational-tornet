@@ -201,7 +201,7 @@ def _take_gates(arr: np.ndarray, az_idx: np.ndarray, g0: int, fill):
     out = np.full((CHIP_N_AZ, CHIP_N_RNG) + arr.shape[2:], fill, dtype=arr.dtype)
     lo, hi = max(g0, 0), min(g0 + CHIP_N_RNG, G)
     if hi > lo:
-        out[:, lo - g0:hi - g0] = arr[az_idx][:, lo:hi]
+        out[:, lo - g0:hi - g0] = arr[az_idx, lo:hi]
     return out
 
 
