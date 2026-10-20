@@ -20,6 +20,7 @@ DEFAULT_MODEL_FILE = "tornado_detector_baseline.keras"
 
 
 def load_tornet_model(model_path: Optional[str] = None):
+    """Loads a TorNet Keras model (default: pretrained baseline from Hugging Face)."""
     import keras
     from tornet.models.keras.layers import CoordConv2D, FillNaNs
 
@@ -35,6 +36,8 @@ def _sigmoid(x):
 
 
 class SweepPredictor:
+    """Tiles a full sweep into chips, runs the model in batches and merges the heatmaps."""
+
     def __init__(self, model, batch_size: int = 32):
         import keras
 

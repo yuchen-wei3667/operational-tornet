@@ -82,9 +82,17 @@ numbers.
 
 ```
 pip install -r requirements/nexrad.txt
+python scripts/nexrad/level2_to_model_inputs.py KTLX20240507_000047_V06 --out-dir inputs/  # model-ready .npz
 python scripts/nexrad/run_realtime_tornet.py --sites KTLX --out-dir ./tornet_rt      # live
 python scripts/nexrad/validate_against_tornet.py $TORNET_ROOT/train/2022/*.nc --max-files 20
+python scripts/nexrad/benchmark_level2.py data/*_V06 --kdp-source level3 --infer --download
+python scripts/nexrad/compare_dealiasers.py $TORNET_ROOT/train/2022/*.nc --max-files 27
 ```
+
+In Python, `tornet.nexrad.level2_to_model_inputs(path_or_bytes)` returns arrays ready
+for `model.predict`. On 4 CPU cores a full scan takes ~16.5 s from AWS to
+probabilities, of which ~4.6 s is conversion. The nexrad README has the benchmark and
+explains why U-Net VDA dealiasing is kept.
 
 `tornet/data/xradar_loader.py` interpolates onto a fixed grid and computes KDP and
 dealiasing differently, so its output does not match the training data. Use

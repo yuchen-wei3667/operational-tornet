@@ -79,6 +79,7 @@ class ModelInputs:
         return len(self.chips["az_center"])
 
     def batches(self, batch_size: int = 32) -> Iterator[Dict[str, np.ndarray]]:
+        """Yields input dicts of at most ``batch_size`` chips (views, no copies)."""
         for i in range(0, len(self), batch_size):
             yield {k: v[i:i + batch_size] for k, v in self.inputs.items()}
 
@@ -99,6 +100,7 @@ class ModelInputs:
 
     @classmethod
     def load(cls, path: str) -> "ModelInputs":
+        """Reads a file written by ``save``."""
         with np.load(path) as z:
             inputs = {k: z[k] for k in z.files if not k.startswith(("chip_", "meta_"))}
             chips = {k[5:]: z[k] for k in z.files if k.startswith("chip_")}

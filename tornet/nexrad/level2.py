@@ -174,6 +174,7 @@ def find_cuts(volumes: Sequence[Level2Volume], elevation: float,
 
 def choose_cut(cuts: Sequence[Cut], selection: str = "latest",
                target_time: Optional[datetime.datetime] = None) -> Cut:
+    """Picks one cut: 'latest', 'first', or 'nearest' to ``target_time``."""
     if not cuts:
         raise ValueError("no candidate cuts")
     if selection == "latest":

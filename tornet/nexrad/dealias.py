@@ -143,6 +143,7 @@ def download_unet_vda_weights(cache_dir: str = DEFAULT_CACHE_DIR) -> str:
 
 
 def load_unet_vda_weights(model_layers: List, weights_npz: str) -> None:
+    """Assigns converted unet-vda weights (checkpoint order) to the Keras 3 layers."""
     with np.load(weights_npz) as f:
         arrays = [f[k] for k in sorted(f.files)]
     i = 0
@@ -184,6 +185,7 @@ class UNetVDA:
 
     @classmethod
     def from_pretrained(cls, weights_npz: Optional[str] = None, cache_dir: str = DEFAULT_CACHE_DIR):
+        """Loads weights from ``weights_npz``, $TORNET_UNET_VDA_WEIGHTS, or downloads them."""
         if weights_npz is None:
             weights_npz = os.environ.get("TORNET_UNET_VDA_WEIGHTS") or download_unet_vda_weights(cache_dir)
         model, ordered = build_unet_vda_model()

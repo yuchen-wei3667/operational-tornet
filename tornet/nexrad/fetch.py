@@ -53,6 +53,7 @@ def s3_list(bucket: str, prefix: str, delimiter: Optional[str] = None,
 
 
 def download(bucket: str, key: str) -> bytes:
+    """Downloads one object from a public bucket."""
     return _get(f"{bucket}/{urllib.parse.quote(key)}")
 
 
@@ -66,6 +67,7 @@ def level2_key_time(key: str) -> Optional[datetime.datetime]:
 
 
 def list_level2_volumes(site: str, date: datetime.date) -> List[str]:
+    """Archive keys of all Level-II volumes of a site on one UTC day."""
     keys, _ = s3_list(LEVEL2_BUCKET, f"{date:%Y/%m/%d}/{site.upper()}/")
     return sorted(k for k in keys if level2_key_time(k) is not None)
 

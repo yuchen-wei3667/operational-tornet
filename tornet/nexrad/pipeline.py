@@ -270,6 +270,7 @@ def tile_centers(volume: TorNetVolume,
 
 
 def iter_chips(volume: TorNetVolume, centers=None, **tile_kwargs) -> Iterator[Dict[str, np.ndarray]]:
+    """Yields ``extract_chip`` samples at ``centers`` or over a tiling of the sweep."""
     for az_c, rng_c in (centers if centers is not None else tile_centers(volume, **tile_kwargs)):
         yield extract_chip(volume, az_c, rng_c)
 
